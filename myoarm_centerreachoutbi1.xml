@@ -1,0 +1,100 @@
+<mujoco model="template">
+	<compiler angle="radian" autolimits="true"/>
+	<option timestep="0.005"/>
+	<size njmax="1000" nconmax="400" nkey="1" nuser_jnt="1"/>
+	<visual>
+		<scale framelength="0.5" framewidth="0.01"/>
+	</visual>
+	<asset>
+		<texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="0.6 0.8 1" width="256" height="1536"/>
+		<texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1=".1 .2 .3" rgb2=".2 .3 .4"/>
+		<material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance=".2"/>
+	</asset>
+	<worldbody>
+		<light directional="true"/>
+		<site name="baseProximalOrigin" pos="-.05 0.050000 0" size="0.005"/>
+		<site name="baseDistalOrigin" pos="-.05 -0.020000 0" size="0.005"/>
+		<body name="ground" euler="1.571 0 0">
+			<body name="base" pos="0 0 0">
+				<geom type="ellipsoid" size=".05" rgba=".3 1 .3 1" fromto="-.05 0 0 .05 0 0"/>
+				<inertial pos="0 0 0" mass=".86" diaginertia="0.025 0.025 0.025"/>
+				<joint name="shoulder" pos="0 0 0" axis="0 1 0" range="-1 0.610865"/>
+				<body name="ProximalForearm" pos="0 0 0">
+					<inertial pos="0 0 0" mass="3.25" diaginertia="0.025 0.025 0.025"/>
+					<geom type="ellipsoid" size=".05" rgba="1 .9 .3 1" fromto="0 0 0 .32 0 0"/>
+					<site name="ProximalForearmProximalInsertion" pos=".1 0 -0.05" size="0.005"/>
+					<site name="ProximalForearmDistalInsertion" pos=".1 0 0.05" size="0.005"/>
+					<site name="ProximalForearmProximalOrigin"  pos=".15 0 -0.05" size="0.005"/>
+					<site name="ProximalForearmDistalOrigin"    pos=".20 0 0.05" size="0.005"/>
+					<site name="ProximalForearmProximalAnchor"    pos=".17 0 -0.05" size="0.005"/>
+					<site name="ProximalForearmDistalAnchor"      pos=".28 0 0.05" size="0.005"/>
+					<site name="ProximalAnchor1"      pos="0 0 -0.05" size="0.005"/>
+					<site name="ProximalAnchor2"      pos="0 0 0.05" size="0.005"/>
+					<site name="ProximalAnchor3"      pos="0.34 0 0.05" size="0.005"/>
+					<body name="DistalForearm" pos=".32 0 0">
+						<inertial pos="0 0 0" mass="1.87" diaginertia="0.025 0.025 0.025"/>
+						<geom type="ellipsoid" size=".04" rgba="1 .5 .3 1" fromto="0 0 0 .32 0 0"/>
+						<site name="DistalForearmProximalInsertion" pos=".07 0 -0.02" size="0.005"/>
+						<site name="DistalForearmDistalInsertion" pos=".05 0 0.05" size="0.005"/>
+						<joint name="elbow" pos="0 0 0" axis="0 1 0" range="0 2.5"/>
+						<body name="Hand" pos=".32 0 0">
+							<inertial pos="0 0 0" mass="0.6" diaginertia="0.025 0.025 0.025"/>
+							<geom type="ellipsoid" size=".04" rgba=".9 .5 1 1" fromto="-.04 0 0 .04 0 0"/>
+							<site name="handsite" pos="0 0 0" rgba="1 0 0 1"/>
+						</body>
+					</body>
+				</body>
+			</body>
+		</body>
+		<body name="Object" pos="0.47 0.0 0.07">
+            <geom type="box" size="0.02 0.02 0.02" rgba="1 1 1 1"/>
+            <site name="object_o" pos="0 0 0" rgba="1 0 0 1"/> 
+        </body>
+	</worldbody>
+	<tendon>
+		<spatial name="ShoulderFlexor_tendon">
+			<site site="baseProximalOrigin"/>
+			<site site="ProximalAnchor1"/>
+			<site site="ProximalForearmProximalInsertion"/>
+		</spatial>
+		<spatial name="ShoulderExtensor_tendon">
+			<site site="baseDistalOrigin"/>
+			<site site="ProximalAnchor2"/>
+			<site site="ProximalForearmDistalInsertion"/>
+		</spatial>
+		<spatial name="ElbowFlexor_tendon">
+			<site site="ProximalForearmProximalOrigin"/>
+			<site site="ProximalForearmProximalAnchor"/>
+			<site site="DistalForearmProximalInsertion"/>
+		</spatial>
+		<spatial name="ElbowExtensor_tendon">
+			<site site="ProximalForearmDistalOrigin"/>
+			<site site="ProximalForearmDistalAnchor"/>
+			<site site="ProximalAnchor3"/>
+			<site site="DistalForearmDistalInsertion"/>
+		</spatial>
+		<spatial name="BiarticulateProximal_tendon">
+			<site site="baseProximalOrigin"/>
+			<site site="ProximalAnchor1"/>
+			<site site="ProximalForearmProximalInsertion"/>
+			<site site="ProximalForearmProximalAnchor"/>
+			<site site="DistalForearmProximalInsertion"/>
+		</spatial>
+		<spatial name="BiarticulateDistal_tendon">
+			<site site="baseDistalOrigin"/>
+			<site site="ProximalAnchor2"/>
+			<site site="ProximalForearmDistalInsertion"/>
+			<site site="ProximalForearmDistalAnchor"/>
+			<site site="ProximalAnchor3"/>
+			<site site="DistalForearmDistalInsertion"/>
+		</spatial>
+	</tendon>
+	<actuator>
+		<muscle ctrlrange="0 1" force="100" name="ShoulderFlexor" tendon="ShoulderFlexor_tendon" lengthrange=".01 .2"/>
+		<muscle ctrlrange="0 1" force="100" name="ShoulderExtensor" tendon="ShoulderExtensor_tendon" lengthrange=".01 .2"/>
+		<muscle ctrlrange="0 1" force="100" name="ElbowFlexor" tendon="ElbowFlexor_tendon" lengthrange=".01 .4"/>
+		<muscle ctrlrange="0 1" force="100" name="ElbowExtensor" tendon="ElbowExtensor_tendon" lengthrange=".01 .3"/>
+		<muscle ctrlrange="0 1" force="100" name="BiarticulateProximal" tendon="BiarticulateProximal_tendon" lengthrange=".3 .55"/>
+		<muscle ctrlrange="0 1" force="100" name="BiarticulateDistal" tendon="BiarticulateDistal_tendon" lengthrange=".3 .6"/>
+    </actuator>
+</mujoco>
