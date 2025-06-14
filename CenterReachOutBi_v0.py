@@ -33,35 +33,52 @@ class ReachEnvV0(BaseV0):
         low, high = bounds.T
         self.action_space = spaces.Box(low=low, high=high, dtype=np.float32)
         return self.action_space
-    def set_perturbation_force(self, force):
+    
+    def set_perturbation(self, force = 0, index = 5, timing = [0,0], probability = 1.0): # 5 = y axis, 4 = x axis
         self.perturbation_force = force
+        self.perturbation_index = index
+        self.perturbation_time = timing # from, to
+        self.perturbation_prob = probability
+    def set_nearth(self, near_th):
+        self.near_th = near_th
+        print("Target size is now " + str(self.near_th * 100) + " cm")
+        return self.near_th
+    def set_velgoal(self, vel_goal):
+        self.vel_goal = vel_goal
+        print("Velocity goal is now " + str(self.vel_goal))
+        return self.vel_goal
     def _setup(self,
-               obj_xyz_range=None,
-               far_th=.35, # set how far the hand can get from the target before it loses reward
-               obs_keys: list = DEFAULT_OBS_KEYS,
-               drop_th=0.50,
-               qpos_noise_range=None,
-               noise_std=0.02,
-               weighted_reward_keys: dict = DEFAULT_RWD_KEYS_AND_WEIGHTS,
+                obj_xyz_range=None,
+                far_th=.35, # set how far the hand can get from the target before it loses reward
+                obs_keys: list = DEFAULT_OBS_KEYS,
+                drop_th=0.50,
+                qpos_noise_range=None,
+                noise_std=0.00,
+                weighted_reward_keys: dict = DEFAULT_RWD_KEYS_AND_WEIGHTS,
                **kwargs,
-               ):
+                ):
         self.far_th = far_th
         self.noise_std = noise_std
+        self.std = False
         self.palm_sid = self.sim.model.site_name2id("handsite") # site of hand
         self.object_sid = self.sim.model.site_name2id("object_o")
         self.object_bid = self.sim.model.body_name2id("Object") # site of object
         self.obj_xyz_range = obj_xyz_range
-        self.drop_th = drop_th  
+        self.drop_th = drop_th
         self.qpos_noise_range = qpos_noise_range
         self.running_reach_cost = 0
         self.perturbation_flag = False
-        self.perturbation_time = 0.0
+        self.perturbation_time = [0.0,0.0]
         self.perturbation_force = 0
-        
+        self.perturbation_prob = 1.0
+        self.perturbation_index = 5
+        self.near_th = 0.025 #TODO: Change this
+        print("Target size is " + str(self.near_th * 100) + " cm")
         super()._setup(obs_keys=obs_keys,
-                       weighted_reward_keys=weighted_reward_keys,
+                        weighted_reward_keys=weighted_reward_keys,
                        **kwargs,
-                       )
+                        )
+        self.self = self
         keyFrame_id = 0
         #if self.obj_xyz_range is None else 1
         
@@ -90,11 +107,12 @@ class ReachEnvV0(BaseV0):
         return obs
 
 
-    def get_obs_dict(self, sim):
+    def get_obs_dict(self, sim): #TODO: If blinded return first step value
         obs_dict = {}
         obs_dict['time'] = np.array([sim.data.time])
         obs_dict['hand_qpos'] = sim.data.qpos[:].copy()
         obs_dict['hand_qvel'] = sim.data.qvel[:].copy() * self.dt
+        obs_dict['joint_forces'] = sim.data.qfrc_actuator[:].copy()
         if sim.model.na > 0:
             obs_dict['act'] = sim.data.act[:].copy()
 
@@ -103,36 +121,38 @@ class ReachEnvV0(BaseV0):
         obs_dict['palm_pos'] = sim.data.site_xpos[self.palm_sid]
         obs_dict['obj_pos'][2]=0
         obs_dict['palm_pos'][2]=0
+        #obs_dict['obj_pos'][0] = obs_dict['obj_pos'][0] + self.near_th/2
         obs_dict['reach_err'] = np.array(obs_dict['palm_pos']) - np.array(obs_dict['obj_pos'])
         #print(obs_dict['reach_err'])
-        return obs_dict # provide the obs_dict to the user
-    
+        return obs_dict # provide the obs_dict to the use
 
     def get_reward_dict(self, obs_dict): # set up reward dictionary
+        vel_goal = self.vel_goal if hasattr(self, 'vel_goal') else 0.02
         reach_dist = abs(np.linalg.norm(obs_dict['reach_err'], axis=-1))
         act_mag = abs(np.linalg.norm(self.obs_dict['act'], axis=-1) / self.sim.model.na if self.sim.model.na != 0 else 0)
         far_th = abs(self.far_th)
         end_vel = abs(np.sqrt((np.array(self.obs_dict['hand_qvel'])[0][0][0])**2 + (np.array(self.obs_dict['hand_qvel'])[0][0][1])**2))
-        near_th = 0.05
         drop = reach_dist > self.drop_th
         palm = np.array(self.obs_dict['palm_pos'])
-        x_correct = ((palm[0][0][0] >= (self.obj_xyz_range[0][0])) and (palm[0][0][0] <= (self.obj_xyz_range[0][0]+near_th)))
-        y_correct = ((palm[0][0][1] >= (self.obj_xyz_range[0][1] - near_th/2)) and (palm[0][0][1] <= (self.obj_xyz_range[0][1] + near_th/2)))
+        x_correct = ((palm[0][0][0] > (self.obj_xyz_range[0][0])) and (palm[0][0][0] < (self.obj_xyz_range[0][0]+self.near_th)))
+        y_correct = ((palm[0][0][1] > (self.obj_xyz_range[0][1] - self.near_th/2)) and (palm[0][0][1] < (self.obj_xyz_range[0][1] + self.near_th/2)))
         # set up the reward dictionary
         self.running_reach_cost +=  -1. * reach_dist
+        done_con = ((x_correct and y_correct) and end_vel < vel_goal) or self.time > 2.99
         rwd_dict = collections.OrderedDict((
             ('reach', -1. * reach_dist),
-            ('bonus', 1. * (reach_dist < near_th) and end_vel < 0.05),
+            ('bonus', 1. * ((x_correct and y_correct) and end_vel < vel_goal)),
             #('refund', reward_refund*0.5),
-            ('act_reg', -1. * act_mag),
-            ('penalty', -1. * (reach_dist > far_th) - end_vel*(x_correct and y_correct)*14),
+            ('act_reg', (-1/6) * act_mag), #! try modulating (-1/6)
+            #('penalty', -1. * (reach_dist > far_th) + -1*((palm[0][0][1] > 0.025) or (palm[0][0][1] < -0.025))),
+            ('penalty', -1. * (reach_dist > far_th) + -0.5 * (np.abs(palm[0][0][1] - self.obj_xyz_range[0][1]))),
             ('sparse', -1. * reach_dist),
-            ('solved', reach_dist < near_th),
-            ('done', x_correct and y_correct)
-            #('done', x_correct and y_correct and end_vel < 0.05)
+            ('solved', ((x_correct and y_correct) and end_vel < vel_goal)),
+            ('done', done_con)
         ))
+        
         rwd_dict['dense'] = np.sum([wt * rwd_dict[key] for key, wt in self.rwd_keys_wt.items()], axis=0)
-        return rwd_dict # return the reward dictionary to the user  ``
+        return rwd_dict # return the reward dictionary to the user
     # generate a valid target
     def generate_target_pose(self):
         random_index = np.random.randint(0, len(self.obj_xyz_range))
@@ -150,26 +170,34 @@ class ReachEnvV0(BaseV0):
         self.generate_target_pose()
         self.robot.sync_sims(self.sim, self.sim_obsd)
         obs = super().reset()
-        self.perturbation_flag = True
+        if (np.random.rand() < self.perturbation_prob):
+            self.perturbation_flag = True
+        else:
+            self.perturbation_flag = False
         return obs
     
     def step(self, a, **kwargs):
         self.noisy = np.random.normal(0, self.noise_std, size=a.shape)
-        a += self.noisy
-                
+        if (self.std == True):
+            a += a*self.noisy
+        else:
+            a += self.noisy
         muscle_a = a.copy() # copy the muscle
-        
-        if((self.time>0) and self.perturbation_flag == True):
+        if((self.time>=self.perturbation_time[1])):
+            xfrc_applied = self.sim.data.xfrc_applied.copy()
+            xfrc_applied[self.perturbation_index,1] = 0
+            self.sim.data.xfrc_applied = xfrc_applied
+        elif(((self.time>=self.perturbation_time[0])) and self.perturbation_flag == True):
             #self.perturbation_flag = False
             xfrc_applied = self.sim.data.xfrc_applied.copy()
-            xfrc_applied[5,1] = self.perturbation_force #hand
+            xfrc_applied[self.perturbation_index,1] = self.perturbation_force #hand
             self.sim.data.xfrc_applied = xfrc_applied
+        
         # Explicitely project normalized space (-1,1) to actuator space (0,1) if muscles
         if self.sim.model.na and self.normalize_act:
             # find muscle actuators
             muscle_act_ind = self.sim.model.actuator_dyntype==3
             muscle_a[muscle_act_ind] = 1.0/(1.0+np.exp(-5.0*(muscle_a[muscle_act_ind]-0.5)))
-            # TODO: actuator space may not always be (0,1) for muscle or (-1, 1) for others
             isNormalized = False # refuse internal reprojection as we explicitely did it here
         else:
             isNormalized = self.normalize_act # accept requested reprojection
