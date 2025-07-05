@@ -72,7 +72,7 @@ class ReachEnvV0(BaseV0):
         self.perturbation_force = 0
         self.perturbation_prob = 1.0
         self.perturbation_index = 5
-        self.near_th = 0.025 #TODO: Change this
+        self.near_th = 0.0005 #TODO: Change this
         print("Target size is " + str(self.near_th * 100) + " cm")
         super()._setup(obs_keys=obs_keys,
                         weighted_reward_keys=weighted_reward_keys,
@@ -142,15 +142,13 @@ class ReachEnvV0(BaseV0):
         rwd_dict = collections.OrderedDict((
             ('reach', -1. * reach_dist),
             ('bonus', 1. * ((x_correct and y_correct) and end_vel < vel_goal)),
-            #('refund', reward_refund*0.5),
-            ('act_reg', (-1/6) * act_mag), #! try modulating (-1/6)
-            #('penalty', -1. * (reach_dist > far_th) + -1*((palm[0][0][1] > 0.025) or (palm[0][0][1] < -0.025))),
-            ('penalty', -1. * (reach_dist > far_th) + -0.5 * (np.abs(palm[0][0][1] - self.obj_xyz_range[0][1]))),
+            ('act_reg', (-1/6) * act_mag),
+            ('penalty', -0.1 * self.time + -1. * (reach_dist > far_th) + -0.5 * (np.abs(palm[0][0][1] - self.obj_xyz_range[0][1]))),
+            # ('penalty', -1. * (reach_dist > far_th) + -0.5 * (np.abs(palm[0][0][1] - self.obj_xyz_range[0][1]))),
             ('sparse', -1. * reach_dist),
             ('solved', ((x_correct and y_correct) and end_vel < vel_goal)),
             ('done', done_con)
         ))
-        
         rwd_dict['dense'] = np.sum([wt * rwd_dict[key] for key, wt in self.rwd_keys_wt.items()], axis=0)
         return rwd_dict # return the reward dictionary to the user
     # generate a valid target
