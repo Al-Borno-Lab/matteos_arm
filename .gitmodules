@@ -1,0 +1,3 @@
+[submodule "TrainingArm-main"]
+	path = TrainingArm-main
+	url = https://github.com/exploding-duck/TrainingArm-main.git
